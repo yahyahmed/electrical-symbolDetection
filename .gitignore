@@ -10,3 +10,26 @@ wheels/
 .venv
 
 .env
+
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual env
+.venv/
+
+# Streamlit cache
+.streamlit/
+
+# App workspace and outputs
+workspace/
+runs/
+data/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Model weights
+*.pt

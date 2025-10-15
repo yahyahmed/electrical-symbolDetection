@@ -9,7 +9,7 @@ import streamlit as st
 # Lazy imports where possible to keep startup fast
 
 APP_DIR = Path(__file__).parent.resolve()
-DEFAULT_WEIGHTS = str(APP_DIR / "best (1).pt")
+DEFAULT_WEIGHTS = str(APP_DIR / "best (2).pt")
 WORK_DIR = APP_DIR / "workspace"
 PDF_DIR = WORK_DIR / "pdfs"
 IMG_DIR = WORK_DIR / "images"
