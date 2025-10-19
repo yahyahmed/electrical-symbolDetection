@@ -9,4 +9,3 @@ pandas
 python-dotenv
 onnx
 onnxruntime
-libgl1
