@@ -1,7 +1,9 @@
 streamlit
 ultralytics
 pymupdf
-opencv-python-headless
+opencv-python
 convertapi
 numpy
 Pillow
+pandas
+python-dotenv
