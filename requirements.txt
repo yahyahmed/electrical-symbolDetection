@@ -7,3 +7,5 @@ numpy
 Pillow
 pandas
 python-dotenv
+onnx
+onnxruntime
