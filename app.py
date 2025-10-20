@@ -3,16 +3,24 @@ import io
 import shutil
 from pathlib import Path
 from typing import List, Tuple, Dict
+import traceback
 
 import streamlit as st
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Try to load dotenv, but don't fail if it's not available
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Lazy imports where possible to keep startup fast
 
-APP_DIR = Path(__file__).parent.resolve()
+try:
+    APP_DIR = Path(__file__).parent.resolve()
+except NameError:
+    APP_DIR = Path.cwd()
+
 DEFAULT_WEIGHTS = str(APP_DIR / "best.onnx")
 WORK_DIR = APP_DIR / "workspace"
 PDF_DIR = WORK_DIR / "pdfs"
@@ -52,7 +60,7 @@ def convert_dwf_to_pdf(dwf_path: Path, out_dir: Path) -> List[Path]:
         """)
         raise RuntimeError("ConvertAPI secret not configured. Please set CONVERTAPI_SECRET in .env file.")
 
-    import convertapi  # type: ignore
+    import convertapi
 
     convertapi.api_credentials = secret
     result = convertapi.convert(
@@ -66,7 +74,7 @@ def convert_dwf_to_pdf(dwf_path: Path, out_dir: Path) -> List[Path]:
 
 def render_pdf_to_images(pdf_path: Path, out_dir: Path, dpi: int = 200) -> List[Path]:
     """Render each PDF page to PNG using PyMuPDF."""
-    import fitz  # PyMuPDF
+    import fitz
 
     out_dir.mkdir(parents=True, exist_ok=True)
     image_paths: List[Path] = []
@@ -100,13 +108,13 @@ def run_yolo_inference(image_paths: List[Path], weights_path: Path, conf: float 
 
     # Define colors for different classes
     class_colors = {
-        'Cove Light': (255, 0, 0),      # Red
-        'Door': (0, 255, 0),            # Green
-        'Emergency Light Fitting': (0, 0, 255),  # Blue
-        'Fluorescent Light': (255, 255, 0),      # Yellow
-        'exit': (255, 0, 255),          # Magenta
-        'Downlight': (0, 255, 255),     # Cyan
-        'Socket Outlet': (128, 0, 128), # Purple
+        'Cove Light': (255, 0, 0),
+        'Door': (0, 255, 0),
+        'Emergency Light Fitting': (0, 0, 255),
+        'Fluorescent Light': (255, 255, 0),
+        'exit': (255, 0, 255),
+        'Downlight': (0, 255, 255),
+        'Socket Outlet': (128, 0, 128),
     }
 
     for page_idx, img in enumerate(image_paths):
@@ -114,7 +122,7 @@ def run_yolo_inference(image_paths: List[Path], weights_path: Path, conf: float 
             str(img),
             conf=conf,
             iou=iou,
-            save=False,  # Don't save default annotated images
+            save=False,
             save_txt=False,
         )
         
@@ -128,50 +136,41 @@ def run_yolo_inference(image_paths: List[Path], weights_path: Path, conf: float 
         
         if results:
             r0 = results[0]
-        if r0.boxes is not None and len(r0.boxes) > 0:
-            for b in r0.boxes:
-                cls_id = int(b.cls[0])
-                cls_name = r0.names.get(cls_id, str(cls_id)) if hasattr(r0, 'names') else str(cls_id)
-            conf_score = float(b.conf[0])
+            if r0.boxes is not None and len(r0.boxes) > 0:
+                for b in r0.boxes:
+                    cls_id = int(b.cls[0])
+                    cls_name = r0.names.get(cls_id, str(cls_id)) if hasattr(r0, 'names') else str(cls_id)
+                    conf_score = float(b.conf[0])
                     
-                # Add to page detection data
-            detection = {
-                    'class_name': cls_name,
-                    'confidence': conf_score,
-                    'bbox': b.xyxy[0].tolist()  # [x1, y1, x2, y2]
-                }
-            page_detection_data['detections'].append(detection)
-            page_detection_data['class_counts'][cls_name] += 1
-            counts[cls_name] += 1
+                    # Add to page detection data
+                    detection = {
+                        'class_name': cls_name,
+                        'confidence': conf_score,
+                        'bbox': b.xyxy[0].tolist()
+                    }
+                    page_detection_data['detections'].append(detection)
+                    page_detection_data['class_counts'][cls_name] += 1
+                    counts[cls_name] += 1
 
         page_detections.append(page_detection_data)
 
         # Create custom annotated image with only bounding boxes
         if page_detection_data['detections']:
-            # Load original image
             img_cv = cv2.imread(str(img))
             if img_cv is not None:
-                # Draw bounding boxes with class-specific colors
                 for detection in page_detection_data['detections']:
                     bbox = detection['bbox']
                     class_name = detection['class_name']
-                    
-                    # Get color for this class
-                    color = class_colors.get(class_name, (255, 255, 255))  # Default white
-                    
-                    # Draw bounding box only (no labels)
+                    color = class_colors.get(class_name, (255, 255, 255))
                     x1, y1, x2, y2 = map(int, bbox)
                     cv2.rectangle(img_cv, (x1, y1), (x2, y2), color, 3)
                 
-                # Save custom annotated image
                 custom_annotated_path = OUT_DIR / f"custom_annotated_{img.stem}.jpg"
                 cv2.imwrite(str(custom_annotated_path), img_cv)
                 annotated.append(custom_annotated_path)
             else:
-                # If image loading fails, use original
                 annotated.append(img)
         else:
-            # No detections, use original image
             annotated.append(img)
 
     return dict(counts), annotated, page_detections
@@ -183,16 +182,18 @@ def reset_workspace() -> None:
 
 
 def main() -> None:
-    st.set_page_config(
-        page_title="Electrical Symbols Detection", 
-        layout="wide",
-        initial_sidebar_state="collapsed"
-    )
+    try:
+        st.set_page_config(
+            page_title="Electrical Symbols Detection", 
+            layout="wide",
+            initial_sidebar_state="collapsed"
+        )
+    except:
+        pass
     
-    # Enhanced CSS for better styling and animations
+    # Enhanced CSS
     st.markdown("""
     <style>
-    /* Main Header with Animation */
     .main-header {
         font-size: 2.8rem;
         font-weight: bold;
@@ -211,7 +212,6 @@ def main() -> None:
         100% { background-position: 0% 50%; }
     }
     
-    /* Enhanced Metric Cards */
     .metric-card {
         background: linear-gradient(135deg, #f0f2f6 0%, #e8f4f8 100%);
         padding: 1.5rem;
@@ -227,7 +227,6 @@ def main() -> None:
         box-shadow: 0 8px 15px rgba(0,0,0,0.2);
     }
     
-    /* Enhanced Circular Progress with Animation */
     .circular-progress {
         width: 140px;
         height: 140px;
@@ -268,7 +267,6 @@ def main() -> None:
         line-height: 1.2;
     }
     
-    /* Enhanced Step Animation */
     .step-container {
         display: flex;
         align-items: center;
@@ -324,7 +322,6 @@ def main() -> None:
         color: #2c3e50;
     }
     
-    /* Enhanced Color Legend */
     .color-legend-item {
         text-align: center;
         padding: 20px 15px;
@@ -342,7 +339,6 @@ def main() -> None:
         box-shadow: 0 8px 20px rgba(0,0,0,0.15);
     }
     
-    /* Image Comparison Styling */
     .image-comparison {
         border-radius: 12px;
         overflow: hidden;
@@ -354,7 +350,6 @@ def main() -> None:
         transform: scale(1.02);
     }
     
-    /* Results Panel Styling */
     .results-panel {
         background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
         border-radius: 15px;
@@ -364,7 +359,6 @@ def main() -> None:
         border: 1px solid #dee2e6;
     }
     
-    /* Loading Animation */
     .loading-spinner {
         display: inline-block;
         width: 20px;
@@ -381,7 +375,6 @@ def main() -> None:
         100% { transform: rotate(360deg); }
     }
     
-    /* Enhanced Sidebar */
     .sidebar-content {
         background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
         border-radius: 15px;
@@ -390,7 +383,6 @@ def main() -> None:
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     
-    /* Progress Pipeline */
     .progress-pipeline {
         background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
         border-radius: 20px;
@@ -400,7 +392,6 @@ def main() -> None:
         border: 1px solid #e9ecef;
     }
     
-    /* Remove extra spacing */
     .stApp > div:first-child {
         padding-top: 0;
     }
@@ -412,12 +403,23 @@ def main() -> None:
     </style>
     """, unsafe_allow_html=True)
     
-    # Add logo and company header
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.image("logo.webp", width=200)
-        st.markdown('<h1 class="main-header">🔌 Electrical Symbols Detection System</h1>', unsafe_allow_html=True)
+    # Updated Header Layout: Logo at top, DPSK below, then App Name
+    header_cols = st.columns([1, 2, 1])
+    
+    with header_cols[1]:
+        # Logo at top center
+        logo_path = Path("logo.webp")
+        if logo_path.exists():
+            st.image("logo.webp", width=200)
+        else:
+            st.markdown("### 🏢")
+        
+        # Company name DPSK below logo
         st.markdown('<h2 style="text-align: center; color: #2c3e50; font-weight: bold; margin-top: -10px;">DIGITAL PROCESSING SYSTEMS KUWAIT</h2>', unsafe_allow_html=True)
+        
+        # App name below company name
+        st.markdown('<h1 class="main-header">🔌 Electrical Symbols Detection System</h1>', unsafe_allow_html=True)
+    
     st.markdown("---")
 
     with st.sidebar:
@@ -428,21 +430,18 @@ def main() -> None:
         
         col1, col2 = st.columns(2)
         with col1:
-            conf = st.slider("Confidence", 0.05, 0.95, 0.10, 0.01, 
-                            help="Detection confidence threshold")
+            conf = st.slider("Confidence", 0.05, 0.95, 0.10, 0.01, help="Detection confidence threshold")
         with col2:
-            iou = st.slider("IoU", 0.1, 0.95, 0.20, 0.01,
-                           help="Intersection over Union threshold")
+            iou = st.slider("IoU", 0.1, 0.95, 0.20, 0.01, help="Intersection over Union threshold")
         
-        dpi = st.slider("Render DPI", 72, 400, 300, 4,
-                       help="Image quality (higher = better but slower)")
+        dpi = st.slider("Render DPI", 72, 400, 300, 4, help="Image quality (higher = better but slower)")
         
         st.markdown("### 🗂️ Workspace Management")
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🗑️ Reset", help="Clear all temporary files", use_container_width=True):
                 reset_workspace()
-            st.success("Workspace cleared")
+                st.success("Workspace cleared")
         with col2:
             if st.button("📊 Stats", help="View workspace statistics", use_container_width=True):
                 st.rerun()
@@ -454,7 +453,6 @@ def main() -> None:
         else:
             st.metric("Files in workspace", 0, delta=None)
         
-        # ConvertAPI status with better styling
         st.markdown("### 🔧 ConvertAPI Status")
         convertapi_secret = os.getenv("CONVERTAPI_SECRET")
         if convertapi_secret and convertapi_secret != "your_convertapi_secret_here":
@@ -471,18 +469,16 @@ def main() -> None:
         
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # File upload section with better styling
     st.markdown("### 📁 File Upload")
     st.markdown("Upload a `.dwf`, `.pdf`, or image (`.jpg/.png/.tif/.bmp/.webp`). DWFs are converted to PDF via ConvertAPI.")
     
-    # Create a more prominent upload area
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         up = st.file_uploader(
-                "Choose a file to analyze",
+            "Choose a file to analyze",
             type=["dwf", "pdf", "jpg", "jpeg", "png", "bmp", "tif", "tiff", "webp"],
             accept_multiple_files=False,
-                help="Supported formats: DWF, PDF, JPG, PNG, BMP, TIFF, WEBP"
+            help="Supported formats: DWF, PDF, JPG, PNG, BMP, TIFF, WEBP"
         )
 
     if not up:
@@ -498,14 +494,11 @@ def main() -> None:
     ensure_dirs()
     uploaded_path = save_uploaded_file(up)
     
-    # Show file info
     st.success(f"✅ File uploaded successfully: `{uploaded_path.name}`")
     
-    # Create enhanced progress indicators
     progress_container = st.container()
     status_text = st.empty()
     
-    # Step indicators with enhanced animations
     steps = [
         ("📁", "File Upload & Validation"),
         ("🔄", "DWF to PDF Conversion"), 
@@ -519,7 +512,6 @@ def main() -> None:
     for i, (icon, step_name) in enumerate(steps):
         step_progress[step_name] = st.empty()
     
-    # Circular progress indicator
     def create_circular_progress(percentage, text):
         return f"""
         <div class="circular-progress" style="background: conic-gradient(#1f77b4 {percentage*3.6}deg, #e0e0e0 0deg);">
@@ -530,13 +522,11 @@ def main() -> None:
         </div>
         """
     
-    # Add enhanced animated progress container
     with progress_container:
         st.markdown('<div class="progress-pipeline">', unsafe_allow_html=True)
         st.markdown("### 🚀 Processing Pipeline")
         st.markdown("---")
         
-        # Display steps in a visual format with better positioning
         for i, (icon, step_name) in enumerate(steps):
             step_progress[step_name].markdown(f"""
             <div class="step-container" id="step-{i}">
@@ -551,22 +541,20 @@ def main() -> None:
         all_images: List[Path] = []
         suffix = uploaded_path.suffix.lower()
 
-        # Step 1: File processing with enhanced animation
-        step_progress["File Upload & Validation"].markdown(f"""
+        step_progress["File Upload & Validation"].markdown("""
         <div class="step-container active">
             <div class="step-icon">📁</div>
             <div class="step-text">File Upload & Validation - In Progress...</div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Show circular progress
         progress_display = st.empty()
         progress_display.markdown(create_circular_progress(10, "Validating"), unsafe_allow_html=True)
         
         import time
-        time.sleep(0.2)  # Faster animation
+        time.sleep(0.2)
         
-        step_progress["File Upload & Validation"].markdown(f"""
+        step_progress["File Upload & Validation"].markdown("""
         <div class="step-container completed">
             <div class="step-icon">✅</div>
             <div class="step-text">File Upload & Validation - Complete</div>
@@ -577,8 +565,7 @@ def main() -> None:
         progress_display.markdown(create_circular_progress(20, "Processing"), unsafe_allow_html=True)
 
         if suffix == ".dwf":
-            # Step 2: DWF to PDF conversion with enhanced animation
-            step_progress["DWF to PDF Conversion"].markdown(f"""
+            step_progress["DWF to PDF Conversion"].markdown("""
             <div class="step-container active">
                 <div class="step-icon">🔄</div>
                 <div class="step-text">DWF to PDF Conversion - In Progress...</div>
@@ -589,20 +576,17 @@ def main() -> None:
             progress_display.markdown(create_circular_progress(30, "Converting"), unsafe_allow_html=True)
             
             with st.spinner("🔄 Converting DWF to PDF..."):
-                import time
-                time.sleep(0.1)  # Faster animation
                 pdf_paths = convert_dwf_to_pdf(uploaded_path, PDF_DIR)
-                time.sleep(0.1)  # Faster completion animation
+                time.sleep(0.1)
             
-            step_progress["DWF to PDF Conversion"].markdown(f"""
+            step_progress["DWF to PDF Conversion"].markdown("""
             <div class="step-container completed">
                 <div class="step-icon">✅</div>
                 <div class="step-text">DWF to PDF Conversion - Complete</div>
             </div>
             """, unsafe_allow_html=True)
             
-            # Step 3: PDF to images with enhanced animation
-            step_progress["PDF to Images Rendering"].markdown(f"""
+            step_progress["PDF to Images Rendering"].markdown("""
             <div class="step-container active">
                 <div class="step-icon">🖼️</div>
                 <div class="step-text">PDF to Images Rendering - In Progress...</div>
@@ -618,9 +602,9 @@ def main() -> None:
                     all_images.extend(imgs)
                     progress = 50 + (i + 1) * 20 // len(pdf_paths)
                     progress_display.markdown(create_circular_progress(progress, f"Page {i+1}"), unsafe_allow_html=True)
-                    time.sleep(0.05)  # Faster animation between pages
+                    time.sleep(0.05)
             
-            step_progress["PDF to Images Rendering"].markdown(f"""
+            step_progress["PDF to Images Rendering"].markdown("""
             <div class="step-container completed">
                 <div class="step-icon">✅</div>
                 <div class="step-text">PDF to Images Rendering - Complete</div>
@@ -628,8 +612,7 @@ def main() -> None:
             """, unsafe_allow_html=True)
             
         elif suffix == ".pdf":
-            # Step 3: PDF to images with animation
-            step_progress["PDF to Images Rendering"].markdown(f"""
+            step_progress["PDF to Images Rendering"].markdown("""
             <div class="step-container active">
                 <div class="step-icon">🖼️</div>
                 <div class="step-text">PDF to Images Rendering - In Progress...</div>
@@ -642,9 +625,9 @@ def main() -> None:
             with st.spinner("🖼️ Converting PDF pages to images..."):
                 imgs = render_pdf_to_images(uploaded_path, IMG_DIR, dpi=dpi)
                 all_images.extend(imgs)
-                time.sleep(0.1)  # Faster completion animation
+                time.sleep(0.1)
             
-            step_progress["PDF to Images Rendering"].markdown(f"""
+            step_progress["PDF to Images Rendering"].markdown("""
             <div class="step-container completed">
                 <div class="step-icon">✅</div>
                 <div class="step-text">PDF to Images Rendering - Complete</div>
@@ -653,7 +636,7 @@ def main() -> None:
             progress_display.markdown(create_circular_progress(60, "Complete"), unsafe_allow_html=True)
             
         elif suffix in {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}:
-            step_progress["PDF to Images Rendering"].markdown(f"""
+            step_progress["PDF to Images Rendering"].markdown("""
             <div class="step-container active">
                 <div class="step-icon">🖼️</div>
                 <div class="step-text">Image Processing - In Progress...</div>
@@ -664,11 +647,11 @@ def main() -> None:
             progress_display.markdown(create_circular_progress(40, "Processing"), unsafe_allow_html=True)
             
             with st.spinner("🖼️ Processing image file..."):
-                time.sleep(0.1)  # Faster animation
-            all_images = [uploaded_path]
-            time.sleep(0.1)  # Faster completion animation
+                time.sleep(0.1)
+                all_images = [uploaded_path]
+                time.sleep(0.1)
             
-            step_progress["PDF to Images Rendering"].markdown(f"""
+            step_progress["PDF to Images Rendering"].markdown("""
             <div class="step-container completed">
                 <div class="step-icon">✅</div>
                 <div class="step-text">Image Processing - Complete</div>
@@ -686,12 +669,11 @@ def main() -> None:
         status_text.text(f"✅ Prepared {len(all_images)} page image(s)")
         progress_display.markdown(create_circular_progress(70, "Prepared"), unsafe_allow_html=True)
 
-        # Step 4: Model loading
         weights_path = Path(weights)
         if not weights_path.exists():
             st.warning(f"⚠️ Weights not found at {weights_path}. Using default if available.")
 
-        step_progress["YOLO Model Loading"].markdown(f"""
+        step_progress["YOLO Model Loading"].markdown("""
         <div class="step-container active">
             <div class="step-icon">🤖</div>
             <div class="step-text">YOLO Model Loading - In Progress...</div>
@@ -702,19 +684,16 @@ def main() -> None:
         progress_display.markdown(create_circular_progress(70, "Loading Model"), unsafe_allow_html=True)
         
         with st.spinner("🤖 Loading YOLO model..."):
-            import time
-            time.sleep(0.2)  # Faster loading animation
-            time.sleep(0.2)  # Faster model initialization
+            time.sleep(0.2)
         
-        step_progress["YOLO Model Loading"].markdown(f"""
+        step_progress["YOLO Model Loading"].markdown("""
         <div class="step-container completed">
             <div class="step-icon">✅</div>
             <div class="step-text">YOLO Model Loading - Complete</div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Step 5: Inference with enhanced animation
-        step_progress["Object Detection Inference"].markdown(f"""
+        step_progress["Object Detection Inference"].markdown("""
         <div class="step-container active">
             <div class="step-icon">🔍</div>
             <div class="step-text">Object Detection Inference - In Progress...</div>
@@ -726,17 +705,16 @@ def main() -> None:
         
         with st.spinner("🔍 Performing object detection..."):
             counts, annotated, page_detections = run_yolo_inference(all_images, weights_path, conf=conf, iou=iou)
-            time.sleep(0.1)  # Faster completion animation
+            time.sleep(0.1)
         
-        step_progress["Object Detection Inference"].markdown(f"""
+        step_progress["Object Detection Inference"].markdown("""
         <div class="step-container completed">
             <div class="step-icon">✅</div>
             <div class="step-text">Object Detection Inference - Complete</div>
         </div>
         """, unsafe_allow_html=True)
         
-        # Step 6: Results processing with enhanced animation
-        step_progress["Results Processing"].markdown(f"""
+        step_progress["Results Processing"].markdown("""
         <div class="step-container active">
             <div class="step-icon">📊</div>
             <div class="step-text">Results Processing - In Progress...</div>
@@ -747,12 +725,9 @@ def main() -> None:
         progress_display.markdown(create_circular_progress(95, "Processing"), unsafe_allow_html=True)
         
         with st.spinner("📊 Processing detection results..."):
-            import time
-            time.sleep(0.1)  # Faster processing animation
-            time.sleep(0.1)  # Faster results compilation
-            time.sleep(0.1)  # Faster final processing
+            time.sleep(0.1)
         
-        step_progress["Results Processing"].markdown(f"""
+        step_progress["Results Processing"].markdown("""
         <div class="step-container completed">
             <div class="step-icon">✅</div>
             <div class="step-text">Results Processing - Complete</div>
@@ -762,24 +737,19 @@ def main() -> None:
         status_text.text("✅ Analysis complete!")
         progress_display.markdown(create_circular_progress(100, "Complete!"), unsafe_allow_html=True)
         
-        # Clear progress indicators after a shorter delay
-        import time
-        time.sleep(1.5)  # Faster cleanup
+        time.sleep(1.5)
         progress_display.empty()
         status_text.empty()
         
-        # Clear step indicators
         for step_name in ["File Upload & Validation", "DWF to PDF Conversion", "PDF to Images Rendering", "YOLO Model Loading", "Object Detection Inference", "Results Processing"]:
             step_progress[step_name].empty()
 
-        # Main Results Display - Side by Side Layout
         st.markdown("## 🔍 Inference Results")
         
         if not counts:
             st.warning("No detections found. Try adjusting the confidence threshold.")
             return
         
-        # Page selector at the top
         if annotated:
             selected_page = st.selectbox(
                 "📄 Select Page to View",
@@ -788,18 +758,14 @@ def main() -> None:
                 key="page_selector"
             )
             
-            # Show loading animation when changing pages
             with st.spinner("🔄 Loading page..."):
-                import time
-                time.sleep(0.1)  # Faster loading animation
+                time.sleep(0.1)
             
-            # Create enhanced side-by-side layout for original and inference images
             col_original, col_inference = st.columns(2)
             
             with col_original:
                 st.markdown("### 📷 Original Image")
                 try:
-                    # Load original image with enhanced styling
                     original_img_path = all_images[selected_page - 1]
                     from PIL import Image
                     original_img = Image.open(original_img_path)
@@ -812,7 +778,6 @@ def main() -> None:
             with col_inference:
                 st.markdown("### 🎯 Inference Results")
                 try:
-                    # Load inference image with enhanced styling
                     inference_img = Image.open(annotated[selected_page - 1])
                     st.markdown('<div class="image-comparison">', unsafe_allow_html=True)
                     st.image(inference_img, caption=f"Inference - Page {selected_page}", use_container_width=True)
@@ -820,11 +785,9 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Error loading inference image: {e}")
             
-            # Color Legend - Centered below images
             st.markdown("---")
             st.subheader("🎨 Color Legend for Bounding Boxes")
             
-            # Create color legend with better visual representation
             color_legend = {
                 'Cove Light': ('🔴', '#FF0000'),
                 'Door': ('🟢', '#00FF00'), 
@@ -835,7 +798,6 @@ def main() -> None:
                 'Socket Outlet': ('🟣', '#800080')
             }
             
-            # Display color legend in a grid
             cols_legend = st.columns(len(color_legend))
             for i, (class_name, (emoji, color)) in enumerate(color_legend.items()):
                 with cols_legend[i]:
@@ -846,7 +808,6 @@ def main() -> None:
                     </div>
                     """, unsafe_allow_html=True)
             
-            # Enhanced Detection Results Panel
             st.markdown("---")
             st.markdown('<div class="results-panel">', unsafe_allow_html=True)
             st.subheader("📊 Detection Analysis")
@@ -854,7 +815,6 @@ def main() -> None:
             if page_detections and selected_page:
                 page_data = page_detections[selected_page - 1]
                 
-                # Create metrics row
                 col1, col2, col3, col4 = st.columns(4)
                 with col1:
                     st.metric("Total Detections", len(page_data['detections']))
@@ -869,7 +829,6 @@ def main() -> None:
                         st.metric("Density", f"{len(page_data['detections'])/100:.1f}/100px²")
                 
                 if page_data['detections']:
-                    # Class breakdown with color coding
                     st.markdown("### 🎯 Class Breakdown")
                     for class_name, count in page_data['class_counts'].items():
                         color = color_legend.get(class_name, ('⚪', '#FFFFFF'))[1]
@@ -880,15 +839,14 @@ def main() -> None:
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # Detailed detections table
                     st.markdown("### 📋 Individual Detections")
                     detections_data = []
                     for i, detection in enumerate(page_data['detections']):
                         class_name = detection['class_name']
-                        color = color_legend.get(class_name, ('⚪', '#FFFFFF'))[1]
                         detections_data.append({
                             'ID': i + 1,
-                            'Class': f'<span style="color: {color}; font-weight: bold;">{class_name}</span>',
+                            'Class': class_name,
+                            'Confidence': f"{detection['confidence']:.2f}",
                             'X1': round(detection['bbox'][0], 1),
                             'Y1': round(detection['bbox'][1], 1),
                             'X2': round(detection['bbox'][2], 1),
@@ -908,26 +866,6 @@ def main() -> None:
             
             st.markdown('</div>', unsafe_allow_html=True)
         
-        # Color Legend
-        st.markdown("---")
-        st.subheader("🎨 Color Legend for Bounding Boxes")
-        
-        color_legend = {
-            'Cove Light': '🔴 Red',
-            'Door': '🟢 Green', 
-            'Emergency Light Fitting': '🔵 Blue',
-            'Fluorescent Light': '🟡 Yellow',
-            'exit': '🟣 Magenta',
-            'Downlight': '🔵 Cyan',
-            'Socket Outlet': '🟣 Purple'
-        }
-        
-        cols = st.columns(len(color_legend))
-        for i, (class_name, color_desc) in enumerate(color_legend.items()):
-            with cols[i]:
-                st.markdown(f"**{class_name}**<br/>{color_desc}", unsafe_allow_html=True)
-        
-        # Overall Summary
         st.markdown("---")
         st.subheader("📈 Overall Summary")
         
@@ -941,7 +879,6 @@ def main() -> None:
         with col4:
             st.metric("Avg per Page", round(sum(counts.values()) / len(all_images), 1))
         
-        # Class distribution
         if counts:
             import pandas as pd
             st.subheader("📊 Class Distribution")
@@ -949,11 +886,9 @@ def main() -> None:
             df_counts = df_counts.sort_values('Count', ascending=False)
             st.bar_chart(df_counts.set_index('Class'))
             
-            # Summary table
             st.subheader("📋 Summary Table")
             st.dataframe(df_counts, use_container_width=True)
             
-            # Download button
             csv = df_counts.to_csv(index=False)
             st.download_button(
                 label="📥 Download Summary as CSV",
@@ -964,9 +899,17 @@ def main() -> None:
 
     except Exception as e:
         st.error(f"Error: {e}")
+        st.error(f"Traceback: {traceback.format_exc()}")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        st.error(f"Critical Error: {e}")
+        st.error(f"Full Traceback:\n{traceback.format_exc()}")
+
+
+
 
 
