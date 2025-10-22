@@ -6,30 +6,31 @@ dist/
 wheels/
 *.egg-info
 
+
 # Virtual environments
 .venv
-
 .env
-
-
-# Python
-__pycache__/
-*.pyc
-
-# Virtual env
-.venv/
 
 # Streamlit cache
 .streamlit/
 
-# App workspace and outputs
+# Workspace and test files
 workspace/
-runs/
-data/
+test_*.py
+*_test.py
+*.html
+*.jsx
+*.css
+PIPELINE_FIX_EXPLANATION.md
+UI_IMPROVEMENTS.md
+best*.pt
 
-# OS junk
-.DS_Store
-Thumbs.db
-
-# Model weights
+# Model files
 *.pt
+*.pth
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
